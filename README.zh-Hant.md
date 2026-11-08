@@ -14,6 +14,10 @@
 
 元件聲明見 `assets/fonts/`。Font Logos 與 Material Design 包含標誌；此原始碼及字型發行版未解決個別圖示的權利與商標限制。使用及再散布前須確認各圖示的權利。
 
+## 本機服務整合
+
+`deno run -A scripts/service.ts --prepare` 產生已忽略的 Process Compose 與 macOS LaunchAgent 設定；`--install` 需要工作區埠登記，且拒絕覆寫現有服務。預設專案名稱為目錄名稱；`SANDTIME_PROJECT_NAME`、`SANDTIME_WRAPPER`、`SANDTIME_PORT_REGISTRY`、`SANDTIME_COMPOSE` 可覆寫專案鍵、啟動包裝程式、登記腳本與 Process Compose 路徑。服務使用登記埠並監聽所有介面；預覽預設使用 loopback 與臨時埠，可由 `SANDTIME_PORT` 指定。機器設定留在環境變數或已忽略的 `Local/`、`deploy/`。保留原瀏覽器網址及埠，因資料屬於該 origin；更換來源不會遷移資料。
+
 ## 畫面示例
 
 ![Sandtime — Demo person](docs/demo/sandtime-en.png)

@@ -55,6 +55,21 @@ Requires Deno with `deno bundle` support. `deno task build`, then
 `deno task preview`. The preview binds loopback on an ephemeral port and prints
 its URL. `deno task check` checks TypeScript and the import/persistence model.
 
+## Local service integration
+
+`deno run -A scripts/service.ts --prepare` generates an ignored Process Compose and macOS
+LaunchAgent configuration. `--install` requires the shared workspace port
+registry and refuses an existing agent. Its default project name is the source
+directory name; `SANDTIME_PROJECT_NAME`, `SANDTIME_WRAPPER`,
+`SANDTIME_PORT_REGISTRY` and `SANDTIME_COMPOSE` override the project key,
+workspace wrapper, registry script and Process Compose executable respectively.
+The service uses the registry port and binds all interfaces. Preview uses
+loopback and an ephemeral port, or `SANDTIME_PORT`. Keep machine-specific
+configuration in the environment or ignored `Local/` and `deploy/`.
+
+Preserve the existing browser address and port when replacing an installation:
+browser data belongs to its origin. Changing source does not migrate that data.
+
 ## License and artwork
 
 GPL-3.0-only. The owner confirmed on 2026-10-27 that the anatomical artwork may
