@@ -1,0 +1,24 @@
+Clarifications for the retained font notices
+
+The retained producer NOTICE refers to component paths beginning `licenses/`.
+In this source package the directory is named `Licenses/` with a capital L;
+the component filenames are otherwise unchanged. The built `font-notices.txt`
+combines their contents under `assets/fonts/Licenses/` section headings.
+
+The retained producer NOTICE calls the Cubic 11 input 1.500. The accompanying
+provenance.json instead records the pinned input's embedded version as 1.451,
+at revision 4c566f7d6cc5c05ee360fe9cff56b5da1fcafd4d and SHA-256
+0193f5f033612496df6b45ee92ac3b335bc6a5a24ff95da55ca87b33e57dcf62.
+This clarification applies only to that input. Cubic11.txt retains a combined
+Cubic and inherited M+ notice with an OFL 1.1 declaration and license text; it
+is not represented here as a byte-identical copy of the upstream license file.
+
+The producer NOTICE describes Font Logos as Unlicense; the retained Nerd Fonts
+audit and glyph summary describe it as unlicensed. The versioned sources also
+record these differing descriptions:
+https://raw.githubusercontent.com/lukas-w/font-logos/v1.3.0/LICENSE
+https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/src/glyphs/README.md
+Keep both records. The Font Logos README separately reserves trademark owners'
+rights: https://raw.githubusercontent.com/lukas-w/font-logos/v1.3.0/README.md
+These sources do not establish clearance for each glyph or grant trademark
+rights. Review remains open.
