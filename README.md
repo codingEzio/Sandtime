@@ -59,8 +59,8 @@ its URL. `deno task check` checks TypeScript and the import/persistence model.
 
 `deno run -A scripts/service.ts --prepare` generates an ignored Process Compose and macOS
 LaunchAgent configuration. `--install` requires the shared workspace port
-registry and refuses an existing agent. Both modes refuse existing generated
-configuration files and symlinks; move or review them before preparing again. Its default project name is the source
+registry and refuses an existing agent. Both modes reuse a matching pair of regular generated files without changing
+them, and refuse different, incomplete or symlinked files. Its default project name is the source
 directory name; `SANDTIME_PROJECT_NAME`, `SANDTIME_WRAPPER`,
 `SANDTIME_PORT_REGISTRY` and `SANDTIME_COMPOSE` override the project key,
 workspace wrapper, registry script and Process Compose executable respectively.

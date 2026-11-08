@@ -99,8 +99,58 @@ if (installing) await requireSafeParents(target);
 await Deno.stat(join(root, "dist", "index.html"));
 await Deno.stat(manager);
 await Deno.stat(wrapper);
-await requireAbsent(compose);
-await requireAbsent(plist);
+async function inspectGenerated(
+  path: string,
+  expected: string,
+): Promise<boolean> {
+  let before: Deno.FileInfo;
+  try {
+    before = await Deno.lstat(path);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return false;
+    throw error;
+  }
+  const bytes = new TextEncoder().encode(expected);
+  if (!before.isFile || before.isSymlink || before.size !== bytes.length) {
+    throw Error(`Unsafe or different generated file ${path}`);
+  }
+  const file = await Deno.open(path, { read: true });
+  try {
+    const opened = await file.stat();
+    if (
+      !opened.isFile || opened.dev !== before.dev || opened.ino !== before.ino
+    ) {
+      throw Error(`Generated file changed during inspection ${path}`);
+    }
+    const actual = new Uint8Array(bytes.length + 1);
+    let offset = 0;
+    while (offset < actual.length) {
+      const count = await file.read(actual.subarray(offset));
+      if (count === null) break;
+      offset += count;
+    }
+    const after = await Deno.lstat(path);
+    if (
+      !after.isFile || after.isSymlink || after.dev !== before.dev ||
+      after.ino !== before.ino || offset !== bytes.length ||
+      !bytes.every((byte, i) => byte === actual[i])
+    ) {
+      throw Error(`Unsafe or different generated file ${path}`);
+    }
+    return true;
+  } finally {
+    file.close();
+  }
+}
+async function inspectPair(): Promise<boolean> {
+  const hasCompose = await inspectGenerated(compose, normalizedYaml);
+  const hasPlist = await inspectGenerated(plist, document);
+  if (hasCompose !== hasPlist) {
+    throw Error("Incomplete generated configuration; preserved");
+  }
+  return hasCompose;
+}
+const reuse = await inspectPair();
 let domain = "";
 let frontend = "";
 if (installing) {
@@ -180,12 +230,18 @@ async function createExclusive(path: string, contents: string) {
   file.close();
   return info;
 }
-const firstInfo = await createExclusive(compose, normalizedYaml);
-try {
-  await createExclusive(plist, document);
-} catch (error) {
-  await removeIfSame(compose, firstInfo);
-  throw error;
+if (reuse) {
+  if (!await inspectPair()) {
+    throw Error("Generated configuration disappeared; preserved");
+  }
+} else {
+  const firstInfo = await createExclusive(compose, normalizedYaml);
+  try {
+    await createExclusive(plist, document);
+  } catch (error) {
+    await removeIfSame(compose, firstInfo);
+    throw error;
+  }
 }
 if (!installing) {
   console.log(`Prepared ${compose} and ${plist}`);
