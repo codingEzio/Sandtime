@@ -60,71 +60,120 @@ const document =
 if (
   Deno.args.length !== 1 || !["--prepare", "--install"].includes(Deno.args[0])
 ) throw Error("Use --prepare or --install");
+const installing = Deno.args[0] === "--install";
+const target = join(home, "Library", "LaunchAgents", `${label}.plist`);
+async function requireAbsent(path: string) {
+  try {
+    await Deno.lstat(path);
+    throw Error(`Refusing to overwrite ${path}`);
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) throw error;
+  }
+}
 await Deno.stat(join(root, "dist", "index.html"));
 await Deno.stat(manager);
 await Deno.stat(wrapper);
+await requireAbsent(compose);
+await requireAbsent(plist);
+let domain = "";
+let frontend = "";
+if (installing) {
+  if (Deno.build.os !== "darwin") throw Error("Installation requires macOS");
+  await requireAbsent(target);
+  const uid = new TextDecoder().decode(
+    (await new Deno.Command("/usr/bin/id", { args: ["-u"] }).output()).stdout,
+  ).trim();
+  domain = `gui/${uid}`;
+  if (
+    (await new Deno.Command("/bin/launchctl", {
+      args: ["print", `${domain}/${label}`],
+      stdout: "null",
+      stderr: "null",
+    }).output()).success
+  ) throw Error("LaunchAgent already loaded");
+  const entry = await new Deno.Command(deno, {
+    args: ["run", "--allow-read", ports, "get", project],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!entry.success) {
+    throw Error("Sandtime registry entry is required before install");
+  }
+  const registration = JSON.parse(new TextDecoder().decode(entry.stdout));
+  if (
+    registration.runtime?.composeFile !==
+      `${project}/Local/runtime/process-compose.yaml` ||
+    registration.runtime?.launchAgentLabel !== label
+  ) throw Error("Registry runtime mismatch");
+  frontend = registration.frontend;
+}
+const check = new Deno.Command("/usr/bin/plutil", {
+  args: ["-lint", "-"],
+  stdin: "piped",
+  stdout: "null",
+  stderr: "null",
+}).spawn();
+const writer = check.stdin.getWriter();
+await writer.write(new TextEncoder().encode(document));
+await writer.close();
+if (!(await check.status).success) {
+  throw Error("Generated launch agent failed validation");
+}
 await Deno.mkdir(runtime, { recursive: true });
 await Deno.mkdir(deploy, { recursive: true });
-await Deno.writeTextFile(compose, normalizedYaml);
-await Deno.writeTextFile(plist, document);
-const check = await new Deno.Command("/usr/bin/plutil", {
-  args: ["-lint", plist],
-  stdout: "piped",
-  stderr: "piped",
-}).output();
-if (!check.success) throw Error("Generated launch agent failed validation");
-if (Deno.args[0] === "--prepare") {
+// Exclusive creation prevents a file or symlink appearing after preflight
+// from being overwritten. Roll back only files created by this invocation.
+async function removeIfSame(path: string, info: Deno.FileInfo) {
+  try {
+    const current = await Deno.lstat(path);
+    if (current.dev === info.dev && current.ino === info.ino) {
+      await Deno.remove(path);
+    }
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) throw error;
+  }
+}
+async function createExclusive(path: string, contents: string) {
+  const file = await Deno.open(path, { write: true, createNew: true });
+  const info = await file.stat();
+  try {
+    const bytes = new TextEncoder().encode(contents);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const count = await file.write(bytes.subarray(offset));
+      if (!count) throw Error(`Could not write ${path}`);
+      offset += count;
+    }
+  } catch (error) {
+    file.close();
+    await removeIfSame(path, info);
+    throw error;
+  }
+  file.close();
+  return info;
+}
+const firstInfo = await createExclusive(compose, normalizedYaml);
+try {
+  await createExclusive(plist, document);
+} catch (error) {
+  await removeIfSame(compose, firstInfo);
+  throw error;
+}
+if (!installing) {
   console.log(`Prepared ${compose} and ${plist}`);
   Deno.exit(0);
 }
-if (Deno.build.os !== "darwin") throw Error("Installation requires macOS");
-const target = join(home, "Library", "LaunchAgents", `${label}.plist`);
-try {
-  await Deno.lstat(target);
-  throw Error(`Refusing to overwrite ${target}`);
-} catch (error) {
-  if (!(error instanceof Deno.errors.NotFound)) throw error;
-}
-const uid = new TextDecoder().decode(
-  (await new Deno.Command("/usr/bin/id", { args: ["-u"] }).output()).stdout,
-).trim();
-const domain = `gui/${uid}`;
-if (
-  (await new Deno.Command("/bin/launchctl", {
-    args: ["print", `${domain}/${label}`],
-    stdout: "null",
-    stderr: "null",
-  }).output()).success
-) throw Error("LaunchAgent already loaded");
-const entry = await new Deno.Command(deno, {
-  args: [
-    "run",
-    "--allow-read",
-    ports,
-    "get",
-    project,
-  ],
-  stdout: "piped",
-  stderr: "piped",
-}).output();
-if (!entry.success) {
-  throw Error("Sandtime registry entry is required before install");
-}
-const registration = JSON.parse(new TextDecoder().decode(entry.stdout));
-if (
-  registration.runtime?.composeFile !==
-    `${project}/Local/runtime/process-compose.yaml` ||
-  registration.runtime?.launchAgentLabel !== label
-) throw Error("Registry runtime mismatch");
 await Deno.mkdir(dirname(target), { recursive: true });
-await Deno.copyFile(plist, target);
+// createNew also protects an agent that appears after the preflight.
+await createExclusive(target, document);
 const result = await new Deno.Command("/bin/launchctl", {
   args: ["bootstrap", domain, target],
   stdout: "inherit",
   stderr: "inherit",
 }).output();
 if (!result.success) {
-  await Deno.remove(target);
-  throw Error("LaunchAgent bootstrap failed");
+  throw Error(
+    `LaunchAgent bootstrap failed; prepared files retained, inspect ${target}`,
+  );
 }
-console.log(`Installed ${label} on ${registration.frontend}`);
+console.log(`Installed ${label} on ${frontend}`);
