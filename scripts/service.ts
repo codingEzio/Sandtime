@@ -1,4 +1,4 @@
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const workspace = dirname(root),
@@ -70,6 +70,32 @@ async function requireAbsent(path: string) {
     if (!(error instanceof Deno.errors.NotFound)) throw error;
   }
 }
+// Check every existing ancestor, not only the final output. This rejects a
+// symlinked Local/runtime, deploy, or LaunchAgents directory before writes.
+async function requireSafeParents(path: string) {
+  let parent = dirname(resolve(path));
+  const parents: string[] = [];
+  while (true) {
+    parents.push(parent);
+    const next = dirname(parent);
+    if (next === parent) break;
+    parent = next;
+  }
+  for (const part of parents.reverse()) {
+    try {
+      const info = await Deno.lstat(part);
+      if (info.isSymlink || !info.isDirectory) {
+        throw Error(`Unsafe output parent ${part}`);
+      }
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) break;
+      throw error;
+    }
+  }
+}
+await requireSafeParents(compose);
+await requireSafeParents(plist);
+if (installing) await requireSafeParents(target);
 await Deno.stat(join(root, "dist", "index.html"));
 await Deno.stat(manager);
 await Deno.stat(wrapper);
@@ -121,6 +147,8 @@ if (!(await check.status).success) {
 }
 await Deno.mkdir(runtime, { recursive: true });
 await Deno.mkdir(deploy, { recursive: true });
+await requireSafeParents(compose);
+await requireSafeParents(plist);
 // Exclusive creation prevents a file or symlink appearing after preflight
 // from being overwritten. Roll back only files created by this invocation.
 async function removeIfSame(path: string, info: Deno.FileInfo) {
@@ -164,6 +192,7 @@ if (!installing) {
   Deno.exit(0);
 }
 await Deno.mkdir(dirname(target), { recursive: true });
+await requireSafeParents(target);
 // createNew also protects an agent that appears after the preflight.
 await createExclusive(target, document);
 const result = await new Deno.Command("/bin/launchctl", {
